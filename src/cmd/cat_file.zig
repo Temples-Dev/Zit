@@ -7,7 +7,7 @@ const std = @import("std");
 const Io = std.Io;
 const Repo = @import("../repo.zig").Repo;
 const Store = @import("../object/store.zig").Store;
-const Oid = @import("../object/oid.zig").Oid;
+const OID = @import("../object/oid.zig").OID;
 const errors = @import("../errors.zig");
 const ZitError = errors.Error;
 
@@ -20,11 +20,18 @@ pub fn run(
     stdout: *Io.Writer,
     stderr: *Io.Writer,
 ) !void {
+    std.debug.assert(args.len >= 0);
+    std.debug.assert(@TypeOf(io) == Io);
+    std.debug.assert(@TypeOf(stdout) == *Io.Writer);
+
     // ---- argument parsing ------------------------------------------------
     var mode: ?Mode = null;
     var oid_str: ?[]const u8 = null;
 
-    for (args) |a| {
+    const args_len = @as(u32, @intCast(args.len));
+    var i: u32 = 0;
+    while (i < args_len) : (i += 1) {
+        const a = args[i];
         if (std.mem.eql(u8, a, "-t")) {
             mode = .type_only;
         } else if (std.mem.eql(u8, a, "-s")) {
@@ -37,7 +44,12 @@ pub fn run(
     }
 
     const m = mode orelse {
-        try errors.print(stderr, "cat-file", ZitError.BadUsage, "missing mode (-t, -s, or -p)");
+        try errors.print(
+            stderr,
+            "cat-file",
+            ZitError.BadUsage,
+            "missing mode (-t, -s, or -p)",
+        );
         return ZitError.BadUsage;
     };
     const hex = oid_str orelse {
@@ -45,7 +57,7 @@ pub fn run(
         return ZitError.BadUsage;
     };
 
-    const oid = Oid.fromHex(hex) catch |err| {
+    const oid = OID.fromHex(hex) catch |err| {
         try errors.print(stderr, "cat-file", err, hex);
         return err;
     };

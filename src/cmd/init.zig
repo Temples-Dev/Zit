@@ -18,6 +18,8 @@ pub fn run(
     stdout: *Io.Writer,
 ) !void {
     _ = allocator;
+    std.debug.assert(args.len >= 0);
+    std.debug.assert(@TypeOf(io) == Io);
 
     // Target path argument (default: ".")
     const target: []const u8 = if (args.len > 0) args[0] else ".";
@@ -32,7 +34,11 @@ pub fn run(
             var cwd_buf: [Io.Dir.max_path_bytes]u8 = undefined;
             const cwd_len = try std.process.currentPath(io, &cwd_buf);
             const cwd_path = cwd_buf[0..cwd_len];
-            const joined = try std.fmt.bufPrint(&abs_buf, "{s}/{s}", .{ cwd_path, target });
+            const joined = try std.fmt.bufPrint(
+                &abs_buf,
+                "{s}/{s}",
+                .{ cwd_path, target },
+            );
             break :blk joined;
         }
     };
@@ -48,13 +54,25 @@ pub fn run(
 
     // Check for existing repo.
     if (work_dir.access(io, ".git", .{})) |_| {
-        try stdout.print("Reinitialized existing Git repository in {s}/.git/\n", .{abs_path});
+        try stdout.print(
+            "Reinitialized existing Git repository in {s}/.git/\n",
+            .{abs_path},
+        );
         return;
     } else |_| {}
 
     // Create .git skeleton.
     var git_dir = try work_dir.createDirPathOpen(io, ".git", .{});
     defer git_dir.close(io);
+
+    try createSkeleton(git_dir, io);
+
+    try stdout.print("Initialized empty Git repository in {s}/.git/\n", .{abs_path});
+}
+
+fn createSkeleton(git_dir: Io.Dir, io: Io) !void {
+    std.debug.assert(@TypeOf(git_dir) == Io.Dir);
+    std.debug.assert(@TypeOf(io) == Io);
 
     try git_dir.createDirPath(io, "objects");
     try git_dir.createDirPath(io, "refs/heads");
@@ -76,9 +94,13 @@ pub fn run(
         defer cfg.close(io);
         var buf: [256]u8 = undefined;
         var fw: Io.File.Writer = .init(cfg, io, &buf);
-        try fw.interface.writeAll("[core]\n\trepositoryformatversion = 0\n\tfilemode = true\n\tbare = false\n\tlogallrefupdates = true\n");
+        try fw.interface.writeAll(
+            "[core]\n" ++
+                "\trepositoryformatversion = 0\n" ++
+                "\tfilemode = true\n" ++
+                "\tbare = false\n" ++
+                "\tlogallrefupdates = true\n",
+        );
         try fw.end();
     }
-
-    try stdout.print("Initialized empty Git repository in {s}/.git/\n", .{abs_path});
 }

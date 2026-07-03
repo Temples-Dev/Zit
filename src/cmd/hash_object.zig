@@ -18,19 +18,30 @@ pub fn run(
     stdout: *Io.Writer,
     stderr: *Io.Writer,
 ) !void {
+    std.debug.assert(args.len >= 0);
+    std.debug.assert(@TypeOf(io) == Io);
+    std.debug.assert(@TypeOf(stdout) == *Io.Writer);
+
     // ---- argument parsing ------------------------------------------------
     var write = false;
     var object_type: ObjectType = .blob;
     var file_arg: ?[]const u8 = null;
-    var i: usize = 0;
-    while (i < args.len) : (i += 1) {
+
+    const args_len = @as(u32, @intCast(args.len));
+    var i: u32 = 0;
+    while (i < args_len) : (i += 1) {
         const a = args[i];
         if (std.mem.eql(u8, a, "-w")) {
             write = true;
         } else if (std.mem.eql(u8, a, "-t")) {
             i += 1;
-            if (i >= args.len) {
-                try errors.print(stderr, "hash-object", ZitError.BadUsage, "-t requires a type argument");
+            if (i >= args_len) {
+                try errors.print(
+                    stderr,
+                    "hash-object",
+                    ZitError.BadUsage,
+                    "-t requires a type argument",
+                );
                 return ZitError.BadUsage;
             }
             object_type = ObjectType.fromTypeName(args[i]) catch {
@@ -77,7 +88,7 @@ pub fn run(
         defer repo.deinit();
         var store = Store.init(repo.git_dir, io);
         break :blk try store.writeObject(allocator, object_type, content);
-    } else Store.computeOid(object_type, content);
+    } else Store.computeOID(object_type, content);
 
     try stdout.print("{f}\n", .{oid});
 }
