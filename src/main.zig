@@ -7,6 +7,9 @@ const cmd_cat_file = @import("cmd/cat_file.zig");
 const errors = @import("errors.zig");
 
 pub fn main(init: std.process.Init) !void {
+    std.debug.assert(@TypeOf(init) == std.process.Init);
+    std.debug.assert(@TypeOf(init.io) == Io);
+
     const arena = init.arena.allocator();
     const io = init.io;
 
@@ -57,6 +60,8 @@ pub fn main(init: std.process.Init) !void {
 }
 
 fn printUsage(w: *Io.Writer) !void {
+    std.debug.assert(@TypeOf(w) == *Io.Writer);
+
     try w.writeAll(
         \\usage: zit <command> [<args>]
         \\
