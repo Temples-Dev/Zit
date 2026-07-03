@@ -23,7 +23,7 @@ pub const Repo = struct {
         // Work on a mutable copy so we can truncate it.
         var dir_path_buf: [Io.Dir.max_path_bytes]u8 = undefined;
         @memcpy(dir_path_buf[0..cwd_path.len], cwd_path);
-        var dir_len: usize = cwd_path.len;
+        var dir_len: u32 = @as(u32, @intCast(cwd_path.len));
 
         var traversal_depth: u32 = 0;
         while (traversal_depth < 1024) : (traversal_depth += 1) {
@@ -54,7 +54,7 @@ pub const Repo = struct {
 
             // Ascend: strip the last path component.
             const parent_len = std.mem.findScalarLast(u8, search_path, '/') orelse break;
-            dir_len = if (parent_len == 0) 1 else parent_len;
+            dir_len = if (parent_len == 0) 1 else @as(u32, @intCast(parent_len));
         }
 
         return ZitError.NotAGitRepository;
