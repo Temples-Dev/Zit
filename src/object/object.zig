@@ -1,5 +1,6 @@
 //! Git object types and the bare Object container.
 const std = @import("std");
+const ZitError = @import("../errors.zig").Error;
 
 /// The four fundamental Git object types.
 pub const ObjectType = enum {
@@ -10,28 +11,31 @@ pub const ObjectType = enum {
 
     /// The canonical type name used in the on-disk object header.
     pub fn typeName(self: ObjectType) []const u8 {
-        return switch (self) {
+        std.debug.assert(@tagName(self).len > 0);
+        const name = switch (self) {
             .blob => "blob",
             .tree => "tree",
             .commit => "commit",
             .tag => "tag",
         };
+        std.debug.assert(name.len > 0);
+        return name;
     }
 
-    pub fn fromTypeName(s: []const u8) error{UnknownObjectType}!ObjectType {
+    pub fn fromTypeName(s: []const u8) ZitError!ObjectType {
+        std.debug.assert(s.len > 0);
+        std.debug.assert(s.len < 10);
+
         if (std.mem.eql(u8, s, "blob")) return .blob;
         if (std.mem.eql(u8, s, "tree")) return .tree;
         if (std.mem.eql(u8, s, "commit")) return .commit;
         if (std.mem.eql(u8, s, "tag")) return .tag;
-        return error.UnknownObjectType;
+        return ZitError.UnknownObjectType;
     }
 };
 
 /// A raw Git object: its type and raw content bytes.
-/// `data` is owned by the allocator used to produce it; caller must free it.
 pub const Object = struct {
     type: ObjectType,
-    /// Raw payload — for blobs this is file data; for trees the binary
-    /// tree format; for commits/tags the text header + message body.
     data: []const u8,
 };
