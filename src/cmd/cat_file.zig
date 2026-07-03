@@ -29,21 +29,21 @@ pub fn run(
     var oid_str: ?[]const u8 = null;
 
     const args_len = @as(u32, @intCast(args.len));
-    var i: u32 = 0;
-    while (i < args_len) : (i += 1) {
-        const a = args[i];
-        if (std.mem.eql(u8, a, "-t")) {
+    var arg_index: u32 = 0;
+    while (arg_index < args_len) : (arg_index += 1) {
+        const arg = args[arg_index];
+        if (std.mem.eql(u8, arg, "-t")) {
             mode = .type_only;
-        } else if (std.mem.eql(u8, a, "-s")) {
+        } else if (std.mem.eql(u8, arg, "-s")) {
             mode = .size_only;
-        } else if (std.mem.eql(u8, a, "-p")) {
+        } else if (std.mem.eql(u8, arg, "-p")) {
             mode = .pretty;
         } else {
-            oid_str = a;
+            oid_str = arg;
         }
     }
 
-    const m = mode orelse {
+    const selected_mode = mode orelse {
         try errors.print(
             stderr,
             "cat-file",
@@ -76,7 +76,7 @@ pub fn run(
     };
     defer allocator.free(obj.data);
 
-    switch (m) {
+    switch (selected_mode) {
         .type_only => try stdout.print("{s}\n", .{obj.type.typeName()}),
         .size_only => try stdout.print("{d}\n", .{obj.data.len}),
         .pretty => try stdout.writeAll(obj.data),

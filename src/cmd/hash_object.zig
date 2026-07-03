@@ -28,14 +28,14 @@ pub fn run(
     var file_arg: ?[]const u8 = null;
 
     const args_len = @as(u32, @intCast(args.len));
-    var i: u32 = 0;
-    while (i < args_len) : (i += 1) {
-        const a = args[i];
-        if (std.mem.eql(u8, a, "-w")) {
+    var arg_index: u32 = 0;
+    while (arg_index < args_len) : (arg_index += 1) {
+        const arg = args[arg_index];
+        if (std.mem.eql(u8, arg, "-w")) {
             write = true;
-        } else if (std.mem.eql(u8, a, "-t")) {
-            i += 1;
-            if (i >= args_len) {
+        } else if (std.mem.eql(u8, arg, "-t")) {
+            arg_index += 1;
+            if (arg_index >= args_len) {
                 try errors.print(
                     stderr,
                     "hash-object",
@@ -44,12 +44,12 @@ pub fn run(
                 );
                 return ZitError.BadUsage;
             }
-            object_type = ObjectType.fromTypeName(args[i]) catch {
-                try errors.print(stderr, "hash-object", ZitError.BadUsage, args[i]);
+            object_type = ObjectType.fromTypeName(args[arg_index]) catch {
+                try errors.print(stderr, "hash-object", ZitError.BadUsage, args[arg_index]);
                 return ZitError.BadUsage;
             };
         } else {
-            file_arg = a;
+            file_arg = arg;
         }
     }
 
