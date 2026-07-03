@@ -131,11 +131,11 @@ pub const Store = struct {
         defer allocator.free(raw);
 
         // Parse header: "<type> <size>\x00"
-        const null_pos = std.mem.indexOfScalar(u8, raw, 0) orelse return ZitError.CorruptObject;
+        const null_pos = std.mem.findScalar(u8, raw, 0) orelse return ZitError.CorruptObject;
         const header = raw[0..null_pos];
-        const sp = std.mem.indexOfScalar(u8, header, ' ') orelse return ZitError.CorruptObject;
-        const object_type = ObjectType.fromTypeName(header[0..sp]) catch return ZitError.CorruptObject;
-        const declared = std.fmt.parseInt(usize, header[sp + 1 ..], 10) catch return ZitError.CorruptObject;
+        const space_pos = std.mem.findScalar(u8, header, ' ') orelse return ZitError.CorruptObject;
+        const object_type = ObjectType.fromTypeName(header[0..space_pos]) catch return ZitError.CorruptObject;
+        const declared = std.fmt.parseInt(usize, header[space_pos + 1 ..], 10) catch return ZitError.CorruptObject;
         const payload = raw[null_pos + 1 ..];
         if (payload.len != declared) return ZitError.CorruptObject;
 
