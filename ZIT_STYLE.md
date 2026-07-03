@@ -71,7 +71,7 @@ Clear code is readable, self-documenting code.
 
 - **Indentation:** Use **4 spaces** for indentation.
 - **Column Limit:** Hard limit of **100 columns** per line. Wrap lines cleanly.
-- **Braces:** Always add braces to `if` statements unless the entire conditional fits on a single line.
+- **One-liners:** Prefer one-liner code blocks for simple conditions or error handling (e.g., `if (cond) return err;` or `expr catch return err;`) on a single line instead of splitting them across multiple lines, provided it fits within the 100-column limit.
 - **Format Tooling:** Run `zig fmt` on all source files before committing.
 
 ---
