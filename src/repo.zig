@@ -25,8 +25,8 @@ pub const Repo = struct {
         @memcpy(dir_path_buf[0..cwd_path.len], cwd_path);
         var dir_len: usize = cwd_path.len;
 
-        var i: u32 = 0;
-        while (i < 1024) : (i += 1) {
+        var traversal_depth: u32 = 0;
+        while (traversal_depth < 1024) : (traversal_depth += 1) {
             const search_path = dir_path_buf[0..dir_len];
 
             // Build ".git" path inside this directory.
