@@ -49,7 +49,7 @@ Clear code is readable, self-documenting code.
 
 ### Naming Conventions
 - **Case Conventions:** Use `snake_case` for variables, functions, and file names (e.g., `git_dir.zig`, `space_pos`).
-- **No Abbreviations:** Use descriptive, full names (e.g., `allocator` instead of `alloc`, `target` instead of `dst`).
+- **No Abbreviations:** Use descriptive, full names (e.g., `allocator` instead of `alloc`, `target` instead of `dst`). Avoid ambiguous single-character variables (e.g., use `arg_index` or `index` instead of `i`, `arg` or `argument` instead of `a`, `selected_mode` instead of `m`).
 - **Acronyms:** Use full capitalization for acronyms (e.g., `OID` instead of `Oid`, `SHA` instead of `Sha`).
 - **Qualifiers & Units:** Put units and qualifiers at the end of variables (e.g., `latency_ms_max` instead of `max_latency_ms`).
 - **Symmetric Names:** Match names in pairs for alignment (e.g., `source` and `target` align better than `src` and `dest`).
