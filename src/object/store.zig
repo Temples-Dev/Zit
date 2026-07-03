@@ -7,7 +7,7 @@
 //!   zlib( "<type> <byte-size>\x00" ++ raw_content )
 const std = @import("std");
 const Io = std.Io;
-const Oid = @import("oid.zig").Oid;
+const OID = @import("oid.zig").OID;
 const Object = @import("object.zig").Object;
 const ObjectType = @import("object.zig").ObjectType;
 const ZitError = @import("../errors.zig").Error;
@@ -17,6 +17,8 @@ pub const Store = struct {
     io: Io,
 
     pub fn init(git_dir: Io.Dir, io: Io) Store {
+        std.debug.assert(@TypeOf(git_dir) == Io.Dir);
+        std.debug.assert(@TypeOf(io) == Io);
         return .{ .git_dir = git_dir, .io = io };
     }
 
@@ -24,7 +26,9 @@ pub const Store = struct {
     // OID computation (no I/O, no allocator needed)
     // -----------------------------------------------------------------------
 
-    pub fn computeOid(object_type: ObjectType, content: []const u8) Oid {
+    pub fn computeOID(object_type: ObjectType, content: []const u8) OID {
+        std.debug.assert(content.len >= 0);
+
         var hasher = std.crypto.hash.Sha1.init(.{});
         var hdr_buf: [64]u8 = undefined;
         const hdr = std.fmt.bufPrint(
@@ -34,8 +38,10 @@ pub const Store = struct {
         ) catch unreachable;
         hasher.update(hdr);
         hasher.update(content);
-        var oid: Oid = .{ .bytes = undefined };
+        var oid: OID = .{ .bytes = undefined };
         hasher.final(&oid.bytes);
+
+        std.debug.assert(oid.bytes.len == 20);
         return oid;
     }
 
@@ -48,12 +54,15 @@ pub const Store = struct {
         allocator: std.mem.Allocator,
         object_type: ObjectType,
         content: []const u8,
-    ) !Oid {
-        const oid = computeOid(object_type, content);
+    ) !OID {
+        std.debug.assert(content.len >= 0);
+
+        const oid = computeOID(object_type, content);
+        std.debug.assert(oid.bytes.len == 20);
+
         const hex = oid.toHex();
         const dir_name = hex[0..2];
         const file_name = hex[2..];
-
         const io = self.io;
 
         // Ensure objects/<xx>/ exists.
@@ -66,7 +75,9 @@ pub const Store = struct {
         defer sub_dir.close(io);
 
         // Idempotency: skip if already exists.
-        if (sub_dir.access(io, file_name, .{})) |_| return oid else |_| {}
+        if (sub_dir.access(io, file_name, .{})) |_| {
+            return oid;
+        } else |_| {}
 
         // Build header.
         var hdr_buf: [64]u8 = undefined;
@@ -88,6 +99,7 @@ pub const Store = struct {
                 tmp_file.close(io);
                 sub_dir.deleteFile(io, tmp_name) catch {};
             }
+
             var write_buf: [4096]u8 = undefined;
             var fw: Io.File.Writer = .init(tmp_file, io, &write_buf);
             try fw.interface.writeAll(compressed);
@@ -106,8 +118,10 @@ pub const Store = struct {
     pub fn readObject(
         self: *Store,
         allocator: std.mem.Allocator,
-        oid: Oid,
+        oid: OID,
     ) !Object {
+        std.debug.assert(oid.bytes.len == 20);
+
         const hex = oid.toHex();
         const dir_name = hex[0..2];
         const file_name = hex[2..];
@@ -115,8 +129,10 @@ pub const Store = struct {
 
         var objects_dir = self.git_dir.openDir(io, "objects", .{}) catch return ZitError.ObjectNotFound;
         defer objects_dir.close(io);
+
         var sub_dir = objects_dir.openDir(io, dir_name, .{}) catch return ZitError.ObjectNotFound;
         defer sub_dir.close(io);
+
         const file = sub_dir.openFile(io, file_name, .{}) catch return ZitError.ObjectNotFound;
         defer file.close(io);
 
@@ -134,13 +150,21 @@ pub const Store = struct {
         const null_pos = std.mem.findScalar(u8, raw, 0) orelse return ZitError.CorruptObject;
         const header = raw[0..null_pos];
         const space_pos = std.mem.findScalar(u8, header, ' ') orelse return ZitError.CorruptObject;
+
         const object_type = ObjectType.fromTypeName(header[0..space_pos]) catch return ZitError.CorruptObject;
-        const declared = std.fmt.parseInt(usize, header[space_pos + 1 ..], 10) catch return ZitError.CorruptObject;
+
+        const declared = std.fmt.parseInt(u64, header[space_pos + 1 ..], 10) catch return ZitError.CorruptObject;
+
         const payload = raw[null_pos + 1 ..];
         if (payload.len != declared) return ZitError.CorruptObject;
 
         const data = try allocator.dupe(u8, payload);
-        return Object{ .type = object_type, .data = data };
+        std.debug.assert(data.len == declared);
+
+        const obj = Object{ .type = object_type, .data = data };
+        std.debug.assert(obj.data.len == data.len);
+
+        return obj;
     }
 };
 
@@ -149,6 +173,9 @@ pub const Store = struct {
 // ---------------------------------------------------------------------------
 
 fn zlibCompress(allocator: std.mem.Allocator, header: []const u8, content: []const u8) ![]u8 {
+    std.debug.assert(header.len > 0);
+    std.debug.assert(content.len >= 0);
+
     const flate = std.compress.flate;
 
     var a = try Io.Writer.Allocating.initCapacity(allocator, 4096);
@@ -161,15 +188,21 @@ fn zlibCompress(allocator: std.mem.Allocator, header: []const u8, content: []con
     try compressor.writer.writeAll(content);
     try compressor.finish();
 
-    return try allocator.dupe(u8, a.writer.buffered());
+    const output = try allocator.dupe(u8, a.writer.buffered());
+    std.debug.assert(output.len > 0);
+    return output;
 }
 
 fn zlibDecompress(allocator: std.mem.Allocator, compressed: []const u8) ![]u8 {
+    std.debug.assert(compressed.len > 0);
+
     const flate = std.compress.flate;
 
     var source: Io.Reader = .fixed(compressed);
     var decomp_buf: [flate.max_window_len]u8 = undefined;
     var decompressor: flate.Decompress = .init(&source, .zlib, &decomp_buf);
 
-    return try decompressor.reader.allocRemaining(allocator, .unlimited);
+    const decompressed = try decompressor.reader.allocRemaining(allocator, .unlimited);
+    std.debug.assert(decompressed.len >= 0);
+    return decompressed;
 }
