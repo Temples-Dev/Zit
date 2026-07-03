@@ -12,6 +12,9 @@ pub const Repo = struct {
     /// Walk up from cwd until a `.git/` directory is found.
     /// Returns `ZitError.NotAGitRepository` if the root is reached without finding one.
     pub fn open(allocator: std.mem.Allocator, io: Io) !Repo {
+        std.debug.assert(@TypeOf(io) == Io);
+        std.debug.assert(@TypeOf(allocator) == std.mem.Allocator);
+
         // Use a path-based approach: get the absolute cwd string and walk up.
         var path_buf: [Io.Dir.max_path_bytes]u8 = undefined;
         const cwd_len = std.process.currentPath(io, &path_buf) catch return ZitError.NotAGitRepository;
@@ -22,7 +25,8 @@ pub const Repo = struct {
         @memcpy(dir_path_buf[0..cwd_path.len], cwd_path);
         var dir_len: usize = cwd_path.len;
 
-        while (true) {
+        var i: u32 = 0;
+        while (i < 1024) : (i += 1) {
             const search_path = dir_path_buf[0..dir_len];
 
             // Build ".git" path inside this directory.
@@ -38,7 +42,9 @@ pub const Repo = struct {
                     work_dir.close(io);
                     break;
                 };
-                return Repo{ .work_dir = work_dir, .git_dir = git_dir, .io = io };
+                const repo = Repo{ .work_dir = work_dir, .git_dir = git_dir, .io = io };
+                std.debug.assert(repo.work_dir.handle != repo.git_dir.handle);
+                return repo;
             } else |_| {
                 work_dir.close(io);
             }
@@ -47,15 +53,17 @@ pub const Repo = struct {
             if (std.mem.eql(u8, search_path, "/")) break;
 
             // Ascend: strip the last path component.
-            const parent_len = std.mem.lastIndexOfScalar(u8, search_path, '/') orelse break;
-            dir_len = if (parent_len == 0) 1 else parent_len; // keep leading '/'
+            const parent_len = std.mem.findScalarLast(u8, search_path, '/') orelse break;
+            dir_len = if (parent_len == 0) 1 else parent_len;
         }
 
-        _ = allocator;
         return ZitError.NotAGitRepository;
     }
 
     pub fn deinit(self: *Repo) void {
+        std.debug.assert(@TypeOf(self.io) == Io);
+        std.debug.assert(self.work_dir.handle != self.git_dir.handle);
+
         self.git_dir.close(self.io);
         self.work_dir.close(self.io);
     }
