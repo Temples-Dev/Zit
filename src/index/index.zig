@@ -22,12 +22,12 @@ pub const Index = struct {
     }
 
     /// Finds the index of an entry matching `path` using binary search.
-    pub fn findEntryIndex(self: Index, path: []const u8) ?usize {
+    pub fn findEntryIndex(self: Index, path: []const u8) ?u32 {
         std.debug.assert(path.len > 0);
         std.debug.assert(self.entries.items.len >= 0);
 
-        var low: usize = 0;
-        var high: usize = self.entries.items.len;
+        var low: u32 = 0;
+        var high: u32 = @as(u32, @intCast(self.entries.items.len));
         while (low < high) {
             const mid = low + (high - low) / 2;
             const mid_path = self.entries.items[mid].name;
@@ -51,8 +51,8 @@ pub const Index = struct {
             allocator.free(self.entries.items[idx].name);
             self.entries.items[idx] = entry;
         } else {
-            var low: usize = 0;
-            var high: usize = self.entries.items.len;
+            var low: u32 = 0;
+            var high: u32 = @as(u32, @intCast(self.entries.items.len));
             while (low < high) {
                 const mid = low + (high - low) / 2;
                 if (std.mem.order(u8, entry.name, self.entries.items[mid].name) == .lt) {
@@ -84,7 +84,7 @@ pub const Index = struct {
     fn parseEntry(
         allocator: std.mem.Allocator,
         file_bytes: []const u8,
-        offset: *usize,
+        offset: *u32,
     ) !IndexEntry {
         std.debug.assert(offset.* + 62 <= file_bytes.len - 20);
 
@@ -123,8 +123,9 @@ pub const Index = struct {
 
         // Find the NUL terminator of the path name
         var path_end = offset.*;
-        while (path_end < file_bytes.len - 20 and file_bytes[path_end] != 0) : (path_end += 1) {}
-        if (path_end >= file_bytes.len - 20) return ZitError.CorruptIndex;
+        const limit = @as(u32, @intCast(file_bytes.len - 20));
+        while (path_end < limit and file_bytes[path_end] != 0) : (path_end += 1) {}
+        if (path_end >= limit) return ZitError.CorruptIndex;
 
         const pathname = file_bytes[offset.*..path_end];
         if (name_len < 0x0FFF and name_len != pathname.len) return ZitError.CorruptIndex;
@@ -132,12 +133,12 @@ pub const Index = struct {
         const name = try allocator.dupe(u8, pathname);
         errdefer allocator.free(name);
 
-        const entry_len_so_far = offset.* - entry_start + pathname.len;
+        const entry_len_so_far = offset.* - entry_start + @as(u32, @intCast(pathname.len));
         std.debug.assert(entry_len_so_far == 62 + pathname.len);
         const padding_len = 8 - (entry_len_so_far % 8);
 
-        offset.* += pathname.len + padding_len;
-        if (offset.* > file_bytes.len - 20) return ZitError.CorruptIndex;
+        offset.* += @as(u32, @intCast(pathname.len)) + padding_len;
+        if (offset.* > limit) return ZitError.CorruptIndex;
 
         const entry = IndexEntry{
             .ctime_sec = ctime_sec,
@@ -200,7 +201,7 @@ pub const Index = struct {
             entries.deinit(allocator);
         }
 
-        var offset: usize = 12;
+        var offset: u32 = 12;
         var entry_idx: u32 = 0;
         while (entry_idx < entry_count) : (entry_idx += 1) {
             const entry = try parseEntry(allocator, file_bytes, &offset);
@@ -255,7 +256,7 @@ pub const Index = struct {
             var flags: u16 = 0;
             if (entry.assume_valid) flags |= 0x8000;
             flags |= (@as(u16, entry.stage) & 0x03) << 12;
-            const name_len = entry.name.len;
+            const name_len = @as(u32, @intCast(entry.name.len));
             if (name_len >= 0x0FFF) {
                 flags |= 0x0FFF;
             } else {
