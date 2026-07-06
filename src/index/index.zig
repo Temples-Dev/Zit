@@ -88,57 +88,47 @@ pub const Index = struct {
     ) !IndexEntry {
         std.debug.assert(offset.* + 62 <= file_bytes.len - 20);
 
-        const entry_start = offset.*;
-        const ctime_sec = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const ctime_nsec = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const mtime_sec = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const mtime_nsec = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const dev = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const ino = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const mode = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const uid = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const gid = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
-        const size = std.mem.readInt(u32, file_bytes[offset.* .. offset.* + 4][0..4], .big);
-        offset.* += 4;
+        const entry_bytes = file_bytes[offset.*..];
+        const fixed_bytes = entry_bytes[0..62];
 
-        const oid_bytes = file_bytes[offset.* .. offset.* + 20];
-        const oid = OID{ .bytes = oid_bytes[0..20].* };
-        offset.* += 20;
+        const ctime_sec = std.mem.readInt(u32, fixed_bytes[0..4], .big);
+        const ctime_nsec = std.mem.readInt(u32, fixed_bytes[4..8], .big);
+        const mtime_sec = std.mem.readInt(u32, fixed_bytes[8..12], .big);
+        const mtime_nsec = std.mem.readInt(u32, fixed_bytes[12..16], .big);
+        const dev = std.mem.readInt(u32, fixed_bytes[16..20], .big);
+        const ino = std.mem.readInt(u32, fixed_bytes[20..24], .big);
+        const mode = std.mem.readInt(u32, fixed_bytes[24..28], .big);
+        const uid = std.mem.readInt(u32, fixed_bytes[28..32], .big);
+        const gid = std.mem.readInt(u32, fixed_bytes[32..36], .big);
+        const size = std.mem.readInt(u32, fixed_bytes[36..40], .big);
 
-        const flags = std.mem.readInt(u16, file_bytes[offset.* .. offset.* + 2][0..2], .big);
-        offset.* += 2;
+        const oid = OID{ .bytes = fixed_bytes[40..60].* };
+        const flags = std.mem.readInt(u16, fixed_bytes[60..62], .big);
 
         const assume_valid = (flags & 0x8000) != 0;
         const stage = @as(u2, @intCast((flags & 0x3000) >> 12));
         const name_len = flags & 0x0FFF;
 
-        // Find the NUL terminator of the path name
-        var path_end = offset.*;
-        const limit = @as(u32, @intCast(file_bytes.len - 20));
-        while (path_end < limit and file_bytes[path_end] != 0) : (path_end += 1) {}
-        if (path_end >= limit) return ZitError.CorruptIndex;
+        // Path name starts at offset 62 of the entry.
+        const path_bytes = entry_bytes[62..];
+        const limit = @as(u32, @intCast(file_bytes.len - 20)) - (offset.* + 62);
 
-        const pathname = file_bytes[offset.*..path_end];
+        var path_len: u32 = 0;
+        while (path_len < limit and path_bytes[path_len] != 0) : (path_len += 1) {}
+        if (path_len >= limit) return ZitError.CorruptIndex;
+
+        const pathname = path_bytes[0..path_len];
         if (name_len < 0x0FFF and name_len != pathname.len) return ZitError.CorruptIndex;
 
         const name = try allocator.dupe(u8, pathname);
         errdefer allocator.free(name);
 
-        const entry_len_so_far = offset.* - entry_start + @as(u32, @intCast(pathname.len));
-        std.debug.assert(entry_len_so_far == 62 + pathname.len);
+        const entry_len_so_far = 62 + path_len;
         const padding_len = 8 - (entry_len_so_far % 8);
+        const total_entry_len = entry_len_so_far + padding_len;
 
-        offset.* += @as(u32, @intCast(pathname.len)) + padding_len;
-        if (offset.* > limit) return ZitError.CorruptIndex;
+        offset.* += total_entry_len;
+        std.debug.assert(offset.* <= file_bytes.len - 20);
 
         const entry = IndexEntry{
             .ctime_sec = ctime_sec,
