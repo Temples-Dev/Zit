@@ -14,6 +14,11 @@ pub const Error = error{
     CorruptObject,
     InvalidOID,
     UnknownObjectType,
+
+    // Index / Staging Area errors
+    CorruptIndex,
+    UnsupportedIndexVersion,
+    IndexLocked,
 };
 
 /// Categories of errors for tracing and diagnostics.
@@ -29,7 +34,11 @@ pub fn getCategory(err: anyerror) Category {
     std.debug.assert(@errorName(err).len > 0);
     const category = switch (err) {
         Error.BadUsage => Category.usage,
-        Error.NotAGitRepository => Category.repository,
+        Error.NotAGitRepository,
+        Error.CorruptIndex,
+        Error.UnsupportedIndexVersion,
+        Error.IndexLocked,
+        => Category.repository,
         Error.ObjectNotFound,
         Error.CorruptObject,
         Error.InvalidOID,
@@ -51,6 +60,9 @@ pub fn explain(err: anyerror) []const u8 {
         Error.CorruptObject => "The Git object is corrupt (header or size mismatch)",
         Error.InvalidOID => "The provided Object ID (OID) is invalid (must be 40-character hex)",
         Error.UnknownObjectType => "The specified Git object type is unknown",
+        Error.CorruptIndex => "The Git index file is corrupt or has invalid checksum",
+        Error.UnsupportedIndexVersion => "The Git index version is unsupported (only version 2 is supported)",
+        Error.IndexLocked => "The Git index is locked (index.lock already exists)",
         std.Io.Dir.OpenError.FileNotFound => "The specified file or directory could not be found",
         std.Io.Dir.OpenError.AccessDenied => "Permission denied accessing the filesystem",
         else => @errorName(err),
