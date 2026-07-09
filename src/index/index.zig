@@ -8,6 +8,42 @@ const Io = std.Io;
 
 /// Represents the Git index (staging area) binary file.
 pub const Index = struct {
+    /// Size of the I/O read/write buffer (4 KB).
+    const io_buffer_size = 4096;
+
+    /// The 4-byte signature prefix for Git index files ("DIRC").
+    const signature = "DIRC";
+
+    /// Git index version supported (version 2).
+    const supported_version = 2;
+
+    /// Size of the index header in bytes: signature (4) + version (4) + entry count (4).
+    const header_size = 12;
+
+    /// Size of the trailing SHA-1 checksum in bytes.
+    const checksum_size = 20;
+
+    /// Minimum valid size of an index file (header + checksum = 32 bytes).
+    const min_index_size = header_size + checksum_size;
+
+    /// Size of the fixed metadata block in each index entry.
+    const entry_header_size = 62;
+
+    /// Mask for the "assume-valid" bit (bit 15) in entry flags.
+    const flag_assume_valid = 0x8000;
+
+    /// Mask for the stage bits (bits 13-12) in entry flags.
+    const flag_stage_mask = 0x3000;
+
+    /// Shift amount to extract the stage value from entry flags.
+    const flag_stage_shift = 12;
+
+    /// Mask to restrict the stage value to 2 bits (0-3).
+    const stage_value_mask = 0x03;
+
+    /// Mask for the name length bits (bits 11-0) in entry flags.
+    const flag_name_len_mask = 0x0FFF;
+
     entries: std.ArrayList(IndexEntry),
 
     /// Deinitializes the index and all entries, freeing name allocations.
@@ -86,10 +122,10 @@ pub const Index = struct {
         file_bytes: []const u8,
         offset: *u32,
     ) !IndexEntry {
-        std.debug.assert(offset.* + 62 <= file_bytes.len - 20);
+        std.debug.assert(offset.* + entry_header_size <= file_bytes.len - checksum_size);
 
         const entry_bytes = file_bytes[offset.*..];
-        const fixed_bytes = entry_bytes[0..62];
+        const fixed_bytes = entry_bytes[0..entry_header_size];
 
         const ctime_sec = std.mem.readInt(u32, fixed_bytes[0..4], .big);
         const ctime_nsec = std.mem.readInt(u32, fixed_bytes[4..8], .big);
@@ -105,30 +141,30 @@ pub const Index = struct {
         const oid = OID{ .bytes = fixed_bytes[40..60].* };
         const flags = std.mem.readInt(u16, fixed_bytes[60..62], .big);
 
-        const assume_valid = (flags & 0x8000) != 0;
-        const stage = @as(u2, @intCast((flags & 0x3000) >> 12));
-        const name_len = flags & 0x0FFF;
+        const assume_valid = (flags & flag_assume_valid) != 0;
+        const stage = @as(u2, @intCast((flags & flag_stage_mask) >> flag_stage_shift));
+        const name_len = flags & flag_name_len_mask;
 
-        // Path name starts at offset 62 of the entry.
-        const path_bytes = entry_bytes[62..];
-        const limit = @as(u32, @intCast(file_bytes.len - 20)) - (offset.* + 62);
+        // Path name starts immediately after the fixed entry header.
+        const path_bytes = entry_bytes[entry_header_size..];
+        const limit = @as(u32, @intCast(file_bytes.len - checksum_size)) - (offset.* + entry_header_size);
 
         var path_len: u32 = 0;
         while (path_len < limit and path_bytes[path_len] != 0) : (path_len += 1) {}
         if (path_len >= limit) return ZitError.CorruptIndex;
 
         const pathname = path_bytes[0..path_len];
-        if (name_len < 0x0FFF and name_len != pathname.len) return ZitError.CorruptIndex;
+        if (name_len < flag_name_len_mask and name_len != pathname.len) return ZitError.CorruptIndex;
 
         const name = try allocator.dupe(u8, pathname);
         errdefer allocator.free(name);
 
-        const entry_len_so_far = 62 + path_len;
+        const entry_len_so_far = entry_header_size + path_len;
         const padding_len = 8 - (entry_len_so_far % 8);
         const total_entry_len = entry_len_so_far + padding_len;
 
         offset.* += total_entry_len;
-        std.debug.assert(offset.* <= file_bytes.len - 20);
+        std.debug.assert(offset.* <= file_bytes.len - checksum_size);
 
         const entry = IndexEntry{
             .ctime_sec = ctime_sec,
@@ -165,24 +201,24 @@ pub const Index = struct {
         };
         defer file.close(io);
 
-        var read_buf: [4096]u8 = undefined;
+        var read_buf: [io_buffer_size]u8 = undefined;
         var fr: Io.File.Reader = .init(file, io, &read_buf);
         const file_bytes = try fr.interface.allocRemaining(allocator, .unlimited);
         defer allocator.free(file_bytes);
 
-        if (file_bytes.len < 32) return ZitError.CorruptIndex;
+        if (file_bytes.len < min_index_size) return ZitError.CorruptIndex;
 
         // Verify Checksum
         var sha = std.crypto.hash.Sha1.init(.{});
-        sha.update(file_bytes[0 .. file_bytes.len - 20]);
-        var checksum: [20]u8 = undefined;
+        sha.update(file_bytes[0 .. file_bytes.len - checksum_size]);
+        var checksum: [checksum_size]u8 = undefined;
         sha.final(&checksum);
-        if (!std.mem.eql(u8, &checksum, file_bytes[file_bytes.len - 20 ..])) return ZitError.CorruptIndex;
+        if (!std.mem.eql(u8, &checksum, file_bytes[file_bytes.len - checksum_size ..])) return ZitError.CorruptIndex;
 
         // Header
-        if (!std.mem.eql(u8, file_bytes[0..4], "DIRC")) return ZitError.CorruptIndex;
+        if (!std.mem.eql(u8, file_bytes[0..4], signature)) return ZitError.CorruptIndex;
         const version = std.mem.readInt(u32, file_bytes[4..8], .big);
-        if (version != 2) return ZitError.UnsupportedIndexVersion;
+        if (version != supported_version) return ZitError.UnsupportedIndexVersion;
         const entry_count = std.mem.readInt(u32, file_bytes[8..12], .big);
 
         var entries = std.ArrayList(IndexEntry).init(allocator);
@@ -191,7 +227,7 @@ pub const Index = struct {
             entries.deinit(allocator);
         }
 
-        var offset: u32 = 12;
+        var offset: u32 = header_size;
         var entry_idx: u32 = 0;
         while (entry_idx < entry_count) : (entry_idx += 1) {
             const entry = try parseEntry(allocator, file_bytes, &offset);
@@ -220,9 +256,9 @@ pub const Index = struct {
         var buffer = std.ArrayList(u8).init(allocator);
         defer buffer.deinit();
 
-        try buffer.appendSlice("DIRC");
+        try buffer.appendSlice(signature);
         var version_buf: [4]u8 = undefined;
-        std.mem.writeInt(u32, &version_buf, 2, .big);
+        std.mem.writeInt(u32, &version_buf, supported_version, .big);
         try buffer.appendSlice(&version_buf);
 
         var count_buf: [4]u8 = undefined;
@@ -230,7 +266,7 @@ pub const Index = struct {
         try buffer.appendSlice(&count_buf);
 
         for (self.entries.items) |entry| {
-            var entry_buf: [62]u8 = undefined;
+            var entry_buf: [entry_header_size]u8 = undefined;
             std.mem.writeInt(u32, entry_buf[0..4], entry.ctime_sec, .big);
             std.mem.writeInt(u32, entry_buf[4..8], entry.ctime_nsec, .big);
             std.mem.writeInt(u32, entry_buf[8..12], entry.mtime_sec, .big);
@@ -244,11 +280,11 @@ pub const Index = struct {
             @memcpy(entry_buf[40..60], &entry.oid.bytes);
 
             var flags: u16 = 0;
-            if (entry.assume_valid) flags |= 0x8000;
-            flags |= (@as(u16, entry.stage) & 0x03) << 12;
+            if (entry.assume_valid) flags |= flag_assume_valid;
+            flags |= (@as(u16, entry.stage) & stage_value_mask) << flag_stage_shift;
             const name_len = @as(u32, @intCast(entry.name.len));
-            if (name_len >= 0x0FFF) {
-                flags |= 0x0FFF;
+            if (name_len >= flag_name_len_mask) {
+                flags |= flag_name_len_mask;
             } else {
                 flags |= @as(u16, @intCast(name_len));
             }
@@ -257,7 +293,7 @@ pub const Index = struct {
             try buffer.appendSlice(&entry_buf);
             try buffer.appendSlice(entry.name);
 
-            const entry_len_so_far = 62 + name_len;
+            const entry_len_so_far = entry_header_size + name_len;
             const padding_len = 8 - (entry_len_so_far % 8);
             var padding_idx: u32 = 0;
             while (padding_idx < padding_len) : (padding_idx += 1) try buffer.append(0);
@@ -265,10 +301,10 @@ pub const Index = struct {
 
         var sha = std.crypto.hash.Sha1.init(.{});
         sha.update(buffer.items);
-        var checksum: [20]u8 = undefined;
+        var checksum: [checksum_size]u8 = undefined;
         sha.final(&checksum);
 
-        var write_buf: [4096]u8 = undefined;
+        var write_buf: [io_buffer_size]u8 = undefined;
         var fw: Io.File.Writer = .init(lock_file, io, &write_buf);
         try fw.interface.writeAll(buffer.items);
         try fw.interface.writeAll(&checksum);
