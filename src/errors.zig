@@ -19,6 +19,13 @@ pub const Error = error{
     CorruptIndex,
     UnsupportedIndexVersion,
     IndexLocked,
+
+    // Reference Store errors
+    RefNotFound,
+    SymRefLoop,
+    CorruptRef,
+    RefLocked,
+    RefVerifyFailed,
 };
 
 /// Categories of errors for tracing and diagnostics.
@@ -38,6 +45,11 @@ pub fn getCategory(err: anyerror) Category {
         Error.CorruptIndex,
         Error.UnsupportedIndexVersion,
         Error.IndexLocked,
+        Error.RefNotFound,
+        Error.SymRefLoop,
+        Error.CorruptRef,
+        Error.RefLocked,
+        Error.RefVerifyFailed,
         => Category.repository,
         Error.ObjectNotFound,
         Error.CorruptObject,
@@ -63,6 +75,11 @@ pub fn explain(err: anyerror) []const u8 {
         Error.CorruptIndex => "The Git index file is corrupt or has invalid checksum",
         Error.UnsupportedIndexVersion => "The Git index version is unsupported (only version 2 is supported)",
         Error.IndexLocked => "The Git index is locked (index.lock already exists)",
+        Error.RefNotFound => "The requested Git reference was not found",
+        Error.SymRefLoop => "A symbolic reference loop was detected",
+        Error.CorruptRef => "The Git reference file is corrupt or has invalid format",
+        Error.RefLocked => "The Git reference is locked (already being updated)",
+        Error.RefVerifyFailed => "The reference verification failed (old value does not match)",
         std.Io.Dir.OpenError.FileNotFound => "The specified file or directory could not be found",
         std.Io.Dir.OpenError.AccessDenied => "Permission denied accessing the filesystem",
         else => @errorName(err),

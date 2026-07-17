@@ -184,9 +184,9 @@ pub const Index = struct {
         std.debug.assert(@TypeOf(allocator) == std.mem.Allocator);
 
         const file = git_dir.openFile(io, "index", .{}) catch |err| switch (err) {
-            std.Io.Dir.OpenFileError.FileNotFound => {
+            error.FileNotFound => {
                 return Index{
-                    .entries = std.ArrayList(IndexEntry).init(allocator),
+                    .entries = .empty,
                 };
             },
             else => return err,
@@ -213,7 +213,7 @@ pub const Index = struct {
         if (version != supported_version) return ZitError.UnsupportedIndexVersion;
         const entry_count = std.mem.readInt(u32, file_bytes[8..12], .big);
 
-        var entries = std.ArrayList(IndexEntry).init(allocator);
+        var entries: std.ArrayList(IndexEntry) = .empty;
         errdefer {
             for (entries.items) |entry| allocator.free(entry.name);
             entries.deinit(allocator);
@@ -236,86 +236,90 @@ pub const Index = struct {
         std.debug.assert(@TypeOf(io) == Io);
         std.debug.assert(@TypeOf(allocator) == std.mem.Allocator);
 
-        var lock_file = git_dir.createFile(io, "index.lock", .{ .exclusive = true }) catch |err| switch (err) {
-            std.Io.Dir.CreateFileError.PathAlreadyExists => return ZitError.IndexLocked,
-            else => return err,
-        };
-        defer {
-            lock_file.close(io);
+        var success = false;
+        defer if (!success) {
             git_dir.deleteFile(io, "index.lock") catch {};
-        }
+        };
 
-        var buffer = std.ArrayList(u8).init(allocator);
-        defer buffer.deinit();
-
-        try buffer.appendSlice(signature);
-        var version_buf: [4]u8 = undefined;
-        std.mem.writeInt(u32, &version_buf, supported_version, .big);
-        try buffer.appendSlice(&version_buf);
-
-        var count_buf: [4]u8 = undefined;
-        std.mem.writeInt(u32, &count_buf, @as(u32, @intCast(self.entries.items.len)), .big);
-        try buffer.appendSlice(&count_buf);
-
-        for (self.entries.items) |entry| {
-            var entry_buf: [entry_header_size]u8 = undefined;
-            std.mem.writeInt(u32, entry_buf[0..4], entry.ctime_sec, .big);
-            std.mem.writeInt(u32, entry_buf[4..8], entry.ctime_nsec, .big);
-            std.mem.writeInt(u32, entry_buf[8..12], entry.mtime_sec, .big);
-            std.mem.writeInt(u32, entry_buf[12..16], entry.mtime_nsec, .big);
-            std.mem.writeInt(u32, entry_buf[16..20], entry.dev, .big);
-            std.mem.writeInt(u32, entry_buf[20..24], entry.ino, .big);
-            std.mem.writeInt(u32, entry_buf[24..28], entry.mode, .big);
-            std.mem.writeInt(u32, entry_buf[28..32], entry.uid, .big);
-            std.mem.writeInt(u32, entry_buf[32..36], entry.gid, .big);
-            std.mem.writeInt(u32, entry_buf[36..40], entry.size, .big);
-            @memcpy(entry_buf[40..60], &entry.oid.bytes);
-
-            const name_len = @as(u32, @intCast(entry.name.len));
-            const flags = IndexFlags{
-                .name_len = if (name_len >= 0x0FFF) 0x0FFF else @as(u12, @intCast(name_len)),
-                .stage = entry.stage,
-                .extended = false,
-                .assume_valid = entry.assume_valid,
+        {
+            var lock_file = git_dir.createFile(io, "index.lock", .{ .exclusive = true }) catch |err| switch (err) {
+                error.PathAlreadyExists => return ZitError.IndexLocked,
+                else => return err,
             };
-            const flags_val = @as(u16, @bitCast(flags));
-            std.mem.writeInt(u16, entry_buf[60..62], flags_val, .big);
+            defer lock_file.close(io);
 
-            try buffer.appendSlice(&entry_buf);
-            try buffer.appendSlice(entry.name);
+            var buffer: std.ArrayList(u8) = .empty;
+            defer buffer.deinit(allocator);
 
-            const entry_len_so_far = entry_header_size + name_len;
-            const padding_len = 8 - (entry_len_so_far % 8);
-            var padding_idx: u32 = 0;
-            while (padding_idx < padding_len) : (padding_idx += 1) try buffer.append(0);
+            try buffer.appendSlice(allocator, signature);
+            var version_buf: [4]u8 = undefined;
+            std.mem.writeInt(u32, &version_buf, supported_version, .big);
+            try buffer.appendSlice(allocator, &version_buf);
+
+            var count_buf: [4]u8 = undefined;
+            std.mem.writeInt(u32, &count_buf, @as(u32, @intCast(self.entries.items.len)), .big);
+            try buffer.appendSlice(allocator, &count_buf);
+
+            for (self.entries.items) |entry| {
+                var entry_buf: [entry_header_size]u8 = undefined;
+                std.mem.writeInt(u32, entry_buf[0..4], entry.ctime_sec, .big);
+                std.mem.writeInt(u32, entry_buf[4..8], entry.ctime_nsec, .big);
+                std.mem.writeInt(u32, entry_buf[8..12], entry.mtime_sec, .big);
+                std.mem.writeInt(u32, entry_buf[12..16], entry.mtime_nsec, .big);
+                std.mem.writeInt(u32, entry_buf[16..20], entry.dev, .big);
+                std.mem.writeInt(u32, entry_buf[20..24], entry.ino, .big);
+                std.mem.writeInt(u32, entry_buf[24..28], entry.mode, .big);
+                std.mem.writeInt(u32, entry_buf[28..32], entry.uid, .big);
+                std.mem.writeInt(u32, entry_buf[32..36], entry.gid, .big);
+                std.mem.writeInt(u32, entry_buf[36..40], entry.size, .big);
+                @memcpy(entry_buf[40..60], &entry.oid.bytes);
+
+                const name_len = @as(u32, @intCast(entry.name.len));
+                const flags = IndexFlags{
+                    .name_len = if (name_len >= 0x0FFF) 0x0FFF else @as(u12, @intCast(name_len)),
+                    .stage = entry.stage,
+                    .extended = false,
+                    .assume_valid = entry.assume_valid,
+                };
+                const flags_val = @as(u16, @bitCast(flags));
+                std.mem.writeInt(u16, entry_buf[60..62], flags_val, .big);
+
+                try buffer.appendSlice(allocator, &entry_buf);
+                try buffer.appendSlice(allocator, entry.name);
+
+                const entry_len_so_far = entry_header_size + name_len;
+                const padding_len = 8 - (entry_len_so_far % 8);
+                var padding_idx: u32 = 0;
+                while (padding_idx < padding_len) : (padding_idx += 1) try buffer.append(allocator, 0);
+            }
+
+            var sha = std.crypto.hash.Sha1.init(.{});
+            sha.update(buffer.items);
+            var checksum: [checksum_size]u8 = undefined;
+            sha.final(&checksum);
+
+            var write_buf: [io_buffer_size]u8 = undefined;
+            var fw: Io.File.Writer = .init(lock_file, io, &write_buf);
+            try fw.interface.writeAll(buffer.items);
+            try fw.interface.writeAll(&checksum);
+            try fw.flush();
         }
-
-        var sha = std.crypto.hash.Sha1.init(.{});
-        sha.update(buffer.items);
-        var checksum: [checksum_size]u8 = undefined;
-        sha.final(&checksum);
-
-        var write_buf: [io_buffer_size]u8 = undefined;
-        var fw: Io.File.Writer = .init(lock_file, io, &write_buf);
-        try fw.interface.writeAll(buffer.items);
-        try fw.interface.writeAll(&checksum);
-        try fw.flush();
-        lock_file.close(io);
 
         try Io.Dir.rename(git_dir, "index.lock", git_dir, "index", io);
+        success = true;
     }
 };
 
 test "Git index round-trip serialization and sorting" {
     const allocator = std.testing.allocator;
 
-    var git_dir = try Io.Dir.cwd().makeOpenPath(Io.default_io, "zittest_index_git", .{});
+    var git_dir = try Io.Dir.cwd().createDirPathOpen(std.testing.io, "zittest_index_git", .{});
     defer {
-        git_dir.close(Io.default_io);
-        Io.Dir.cwd().deleteTree(Io.default_io, "zittest_index_git") catch {};
+        git_dir.close(std.testing.io);
+        Io.Dir.cwd().deleteTree(std.testing.io, "zittest_index_git") catch {};
     }
 
-    var idx = Index{ .entries = std.ArrayList(IndexEntry).init(allocator) };
+    var idx = Index{ .entries = .empty };
     defer idx.deinit(allocator);
 
     const oid = OID{ .bytes = [_]u8{1} ** 20 };
@@ -363,10 +367,10 @@ test "Git index round-trip serialization and sorting" {
     try std.testing.expectEqualStrings("src/main.zig", idx.entries.items[1].name);
 
     // Write to index file
-    try idx.write(allocator, git_dir, Io.default_io);
+    try idx.write(allocator, git_dir, std.testing.io);
 
     // Read back and parse
-    var parsed_idx = try Index.parse(allocator, git_dir, Io.default_io);
+    var parsed_idx = try Index.parse(allocator, git_dir, std.testing.io);
     defer parsed_idx.deinit(allocator);
 
     try std.testing.expectEqual(@as(usize, 2), parsed_idx.entries.items.len);
