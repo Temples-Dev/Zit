@@ -28,23 +28,14 @@ pub const Index = struct {
 
     /// Size of the fixed metadata block in each index entry.
     const entry_header_size = 62;
-
-    /// Mask for the "assume-valid" bit (bit 15) in entry flags.
-    const flag_assume_valid = 0x8000;
-
-    /// Mask for the stage bits (bits 13-12) in entry flags.
-    const flag_stage_mask = 0x3000;
-
-    /// Shift amount to extract the stage value from entry flags.
-    const flag_stage_shift = 12;
-
-    /// Mask to restrict the stage value to 2 bits (0-3).
-    const stage_value_mask = 0x03;
-
-    /// Mask for the name length bits (bits 11-0) in entry flags.
-    const flag_name_len_mask = 0x0FFF;
-
     entries: std.ArrayList(IndexEntry),
+
+    const IndexFlags = packed struct(u16) {
+        name_len: u12,
+        stage: u2,
+        extended: bool,
+        assume_valid: bool,
+    };
 
     /// Deinitializes the index and all entries, freeing name allocations.
     pub fn deinit(self: *Index, allocator: std.mem.Allocator) void {
@@ -139,11 +130,12 @@ pub const Index = struct {
         const size = std.mem.readInt(u32, fixed_bytes[36..40], .big);
 
         const oid = OID{ .bytes = fixed_bytes[40..60].* };
-        const flags = std.mem.readInt(u16, fixed_bytes[60..62], .big);
+        const flags_val = std.mem.readInt(u16, fixed_bytes[60..62], .big);
+        const flags = @as(IndexFlags, @bitCast(flags_val));
 
-        const assume_valid = (flags & flag_assume_valid) != 0;
-        const stage = @as(u2, @intCast((flags & flag_stage_mask) >> flag_stage_shift));
-        const name_len = flags & flag_name_len_mask;
+        const name_len = flags.name_len;
+        const stage = flags.stage;
+        const assume_valid = flags.assume_valid;
 
         // Path name starts immediately after the fixed entry header.
         const path_bytes = entry_bytes[entry_header_size..];
@@ -154,7 +146,7 @@ pub const Index = struct {
         if (path_len >= limit) return ZitError.CorruptIndex;
 
         const pathname = path_bytes[0..path_len];
-        if (name_len < flag_name_len_mask and name_len != pathname.len) return ZitError.CorruptIndex;
+        if (name_len < 0x0FFF and name_len != pathname.len) return ZitError.CorruptIndex;
 
         const name = try allocator.dupe(u8, pathname);
         errdefer allocator.free(name);
@@ -279,16 +271,15 @@ pub const Index = struct {
             std.mem.writeInt(u32, entry_buf[36..40], entry.size, .big);
             @memcpy(entry_buf[40..60], &entry.oid.bytes);
 
-            var flags: u16 = 0;
-            if (entry.assume_valid) flags |= flag_assume_valid;
-            flags |= (@as(u16, entry.stage) & stage_value_mask) << flag_stage_shift;
             const name_len = @as(u32, @intCast(entry.name.len));
-            if (name_len >= flag_name_len_mask) {
-                flags |= flag_name_len_mask;
-            } else {
-                flags |= @as(u16, @intCast(name_len));
-            }
-            std.mem.writeInt(u16, entry_buf[60..62], flags, .big);
+            const flags = IndexFlags{
+                .name_len = if (name_len >= 0x0FFF) 0x0FFF else @as(u12, @intCast(name_len)),
+                .stage = entry.stage,
+                .extended = false,
+                .assume_valid = entry.assume_valid,
+            };
+            const flags_val = @as(u16, @bitCast(flags));
+            std.mem.writeInt(u16, entry_buf[60..62], flags_val, .big);
 
             try buffer.appendSlice(&entry_buf);
             try buffer.appendSlice(entry.name);
