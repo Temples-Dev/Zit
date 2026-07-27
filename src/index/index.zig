@@ -184,7 +184,7 @@ pub const Index = struct {
         std.debug.assert(@TypeOf(allocator) == std.mem.Allocator);
 
         const file = git_dir.openFile(io, "index", .{}) catch |err| switch (err) {
-            error.FileNotFound => {
+            std.Io.File.OpenError.FileNotFound => {
                 return Index{
                     .entries = .empty,
                 };
@@ -243,7 +243,7 @@ pub const Index = struct {
 
         {
             var lock_file = git_dir.createFile(io, "index.lock", .{ .exclusive = true }) catch |err| switch (err) {
-                error.PathAlreadyExists => return ZitError.IndexLocked,
+                std.Io.File.OpenError.PathAlreadyExists => return ZitError.IndexLocked,
                 else => return err,
             };
             defer lock_file.close(io);

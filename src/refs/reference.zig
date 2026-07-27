@@ -22,7 +22,7 @@ pub fn isValidRefName(name: []const u8) bool {
     if (name.len == 0) return false;
 
     // Check special top-level references (consist only of UPPERCASE and underscores, e.g. HEAD, ORIG_HEAD).
-    const has_slash = std.mem.indexOfScalar(u8, name, '/') != null;
+    const has_slash = std.mem.findScalar(u8, name, '/') != null;
     if (!has_slash) {
         if (name.len < 4) return false;
         for (name) |char| {
