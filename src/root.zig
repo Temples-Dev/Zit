@@ -10,6 +10,8 @@ pub const index = @import("index/index.zig");
 pub const entry = @import("index/entry.zig");
 pub const refs = @import("refs/store.zig");
 pub const reference = @import("refs/reference.zig");
+pub const worktree = @import("worktree/ignore.zig");
+pub const cmd_add = @import("cmd/add.zig");
 
 test {
     std.testing.refAllDecls(@This());

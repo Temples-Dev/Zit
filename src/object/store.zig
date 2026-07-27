@@ -179,7 +179,7 @@ fn zlibCompress(allocator: std.mem.Allocator, header: []const u8, content: []con
     const flate = std.compress.flate;
 
     var a = try Io.Writer.Allocating.initCapacity(allocator, 4096);
-    errdefer a.deinit();
+    defer a.deinit();
 
     var compress_buf: [flate.max_window_len * 2]u8 = undefined;
     var compressor = try flate.Compress.init(&a.writer, &compress_buf, .zlib, .default);

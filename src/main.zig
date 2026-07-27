@@ -4,6 +4,7 @@ const Io = std.Io;
 const cmd_init = @import("cmd/init.zig");
 const cmd_hash_object = @import("cmd/hash_object.zig");
 const cmd_cat_file = @import("cmd/cat_file.zig");
+const cmd_add = @import("cmd/add.zig");
 const errors = @import("errors.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -51,6 +52,12 @@ pub fn main(init: std.process.Init) !void {
             try stderr.flush();
             std.process.exit(1);
         };
+    } else if (std.mem.eql(u8, subcmd, "add")) {
+        cmd_add.run(arena, io, rest, stdout, stderr) catch {
+            // Error already printed by add.run using errors.print
+            try stderr.flush();
+            std.process.exit(1);
+        };
     } else {
         try stderr.print("zit: unknown command '{s}'\n\n", .{subcmd});
         try printUsage(stderr);
@@ -64,6 +71,9 @@ fn printUsage(w: *Io.Writer) !void {
 
     try w.writeAll(
         \\usage: zit <command> [<args>]
+        \\
+        \\Porcelain commands:
+        \\   add            Add file contents to the index
         \\
         \\Plumbing commands:
         \\   init           Create a new repository
