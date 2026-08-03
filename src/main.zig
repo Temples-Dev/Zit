@@ -5,6 +5,7 @@ const cmd_init = @import("cmd/init.zig");
 const cmd_hash_object = @import("cmd/hash_object.zig");
 const cmd_cat_file = @import("cmd/cat_file.zig");
 const cmd_add = @import("cmd/add.zig");
+const cmd_commit = @import("cmd/commit.zig");
 const errors = @import("errors.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -58,6 +59,11 @@ pub fn main(init: std.process.Init) !void {
             try stderr.flush();
             std.process.exit(1);
         };
+    } else if (std.mem.eql(u8, subcmd, "commit")) {
+        cmd_commit.run(arena, io, init.minimal.environ, rest, stdout, stderr) catch {
+            try stderr.flush();
+            std.process.exit(1);
+        };
     } else {
         try stderr.print("zit: unknown command '{s}'\n\n", .{subcmd});
         try printUsage(stderr);
@@ -74,6 +80,7 @@ fn printUsage(w: *Io.Writer) !void {
         \\
         \\Porcelain commands:
         \\   add            Add file contents to the index
+        \\   commit         Record changes to the repository
         \\
         \\Plumbing commands:
         \\   init           Create a new repository

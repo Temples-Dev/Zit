@@ -4,6 +4,8 @@ pub const OID = @import("object/oid.zig").OID;
 pub const ObjectType = @import("object/object.zig").ObjectType;
 pub const Object = @import("object/object.zig").Object;
 pub const Store = @import("object/store.zig").Store;
+pub const tree = @import("object/tree.zig");
+pub const commit = @import("object/commit.zig");
 pub const Repo = @import("repo.zig").Repo;
 pub const errors = @import("errors.zig");
 pub const index = @import("index/index.zig");
@@ -12,6 +14,7 @@ pub const refs = @import("refs/store.zig");
 pub const reference = @import("refs/reference.zig");
 pub const worktree = @import("worktree/ignore.zig");
 pub const cmd_add = @import("cmd/add.zig");
+pub const cmd_commit = @import("cmd/commit.zig");
 
 test {
     std.testing.refAllDecls(@This());
